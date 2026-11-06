@@ -1,0 +1,37 @@
+# SwiftPM / compiler output and local caches
+.build/
+.build*/
+.cache/
+.swiftpm/
+DerivedData/
+# Keep Package.resolved if dependencies are added later.
+
+# Installers and generated bundles
+/dist/
+/artifacts/
+/release/
+*.dSYM/
+*.xcarchive/
+
+# Local user layouts are not source code
+layout.json
+catalog.json
+launchpad_data.json
+
+# Local configuration, signing credentials, editor / OS state
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.pem
+.DS_Store
+._*
+.idea/
+.vscode/
+*.xcuserstate
+xcuserdata/
+*.log
+__pycache__/
+*.py[cod]

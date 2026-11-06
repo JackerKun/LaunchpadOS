@@ -1,0 +1,75 @@
+name: Build and release macOS
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: launchpados-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+          - arch: universal
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    name: macOS ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python3 scripts/release.py version --tag "$RELEASE_TAG"
+      - run: python3 -m unittest discover -s scripts -p test_release.py
+      - name: Inspect active Apple toolchain
+        run: |
+          swift --version
+          xcrun --sdk macosx --show-sdk-path
+      - name: Build, check architecture, sign and verify installers
+        run: zsh scripts/build-app.sh ${{ matrix.arch }}
+      - name: Collect checksums and build metadata
+        run: python3 scripts/release.py collect --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LaunchpadOS-${{ matrix.arch }}
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: LaunchpadOS-*
+          path: artifacts
+          merge-multiple: true
+      - name: Verify complete release and installer checksums
+        run: python3 scripts/release.py assemble
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > release-state.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("release-state.json"))["isDraft"], "Already published: use a new tag"'
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "LaunchpadOS $RELEASE_TAG" --notes-file release/NOTES.md
+          fi
+          gh release upload "$RELEASE_TAG" release/LaunchpadOS_* release/SHA256SUMS.txt release/build-manifest.json --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --notes-file release/NOTES.md
